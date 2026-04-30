@@ -4,21 +4,17 @@ import io
 import fitz  # PyMuPDF
 from PIL import Image
 
-st.set_page_config(page_title="Ordo Estates V8 - Flexible Mapping", layout="wide")
+st.set_page_config(page_title="Ordo Estates - Fusion Métré", layout="wide")
 
-# محرك الحسابات
-def calcul_v_semelle(A, B, a, b, e, h_p):
-    return float((A * B * e) + (1/6) * h_p * (B * (2*A + a) + b * (2*a + A)))
+st.title("🏗️ Ordo Estates : إدخال البوردورو في الميتري")
 
-st.title("🏗️ Ordo Estates : الميتري الذكي (نسخة مرنة)")
+# --- القائمة الجانبية ---
+st.sidebar.header("📁 الملفات")
+uploaded_pdf = st.sidebar.file_uploader("🖼️ المخططات (PDF)", type="pdf")
+uploaded_bp = st.sidebar.file_uploader("📊 البوردورو (Excel)", type="xlsx")
 
-# --- Sidebar ---
-st.sidebar.header("📁 إدارة الملفات")
-uploaded_pdf = st.sidebar.file_uploader("🖼️ ارفع المخططات (PDF)", type="pdf")
-uploaded_bp = st.sidebar.file_uploader("📊 ارفع البوردورو (Excel)", type="xlsx")
-
+# عرض لبلان PDF للتأكد من القياسات
 if uploaded_pdf:
-    st.sidebar.markdown("---")
     pdf_data = uploaded_pdf.read()
     doc = fitz.open(stream=pdf_data, filetype="pdf")
     page_num = st.sidebar.number_input("الصفحة", min_value=1, max_value=len(doc), step=1) - 1
@@ -27,65 +23,79 @@ if uploaded_pdf:
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     st.sidebar.image(img, use_column_width=True)
 
-tabs = st.tabs(["📏 السوميلات", "🏗️ الميتري العادي", "⛓️ الحديد", "📊 الربط النهائي"])
+# --- الجداول الأساسية للميتري ---
+tabs = st.tabs(["📝 الميتري العام", "📐 السوميلات", "⛓️ الحديد", "⚙️ عملية الدمج"])
 
-# (أقسام الحسابات كتبقى كما هي)
 with tabs[0]:
-    df_s = st.data_editor(pd.DataFrame({
-        'N° Art.': ['1.06'], 'Désignation': ['S1'], 'Nb': [1], 'A': [1.10], 'B': [1.10], 'a': [0.25], 'b': [0.25], 'e': [0.20], 'h_prime': [0.15]
-    }), num_rows="dynamic", key="s_v8")
-    if st.button("احسب السوميلات"):
-        df_s['Total_V'] = df_s.apply(lambda x: calcul_v_semelle(x['A'], x['B'], x['a'], x['b'], x['e'], x['h_prime']), axis=1) * df_s['Nb']
-        st.session_state['res_s'] = df_s[['N° Art.', 'Total_V']]
-        st.dataframe(df_s)
+    st.subheader("إدخال الميتري (القياسات العادية)")
+    # هذا الجدول هو اللي كيمثل "الميتري" اللي غيدخل في البوردورو
+    df_metre = st.data_editor(pd.DataFrame({
+        'N° Art.': ['1.01', '1.02', '1.03', '1.04', '1.05'],
+        'Désignation': ['Terrassement', 'Fouille en masse', 'Fouille en rigole', 'Béton de propreté', 'Béton armé'],
+        'Nb': [1.0] * 5, 'L': [0.0] * 5, 'l': [0.0] * 5, 'h': [0.0] * 5
+    }), num_rows="dynamic", key="m_v9")
+    df_metre['Total'] = df_metre['Nb'] * df_metre['L'] * df_metre['l'] * df_metre['h']
+    st.dataframe(df_metre)
 
 with tabs[1]:
-    df_m = st.data_editor(pd.DataFrame({
-        'N° Art.': ['1.01', '1.02'], 'Désignation': ['Terrassement', 'Fouille'],
-        'Nb': [1.0, 1.0], 'L': [10.0, 5.0], 'l': [10.0, 5.0], 'h': [0.5, 0.8]
-    }), num_rows="dynamic", key="m_v8")
-    df_m['Total'] = df_m['Nb'] * df_m['L'] * df_m['l'] * df_m['h']
-    st.session_state['res_m'] = df_m[['N° Art.', 'Total']]
-    st.dataframe(df_m)
+    # حساب السوميلات بنفس الطريقة
+    st.subheader("ميتري السوميلات (V1 + V2)")
+    df_s = st.data_editor(pd.DataFrame({
+        'N° Art.': ['1.06'], 'Nb': [1], 'A': [1.1], 'B': [1.1], 'a': [0.25], 'b': [0.25], 'e': [0.2], 'h_p': [0.15]
+    }), num_rows="dynamic", key="s_v9")
+    def calc_v(r): return (r.A*r.B*r.e) + (1/6)*r.h_p*(r.B*(2*r.A+r.a)+r.b*(2*r.a+r.A))
+    if st.button("حساب حجم السوميلات"):
+        df_s['Total'] = df_s.apply(calc_v, axis=1) * df_s['Nb']
+        st.session_state['res_s'] = df_s[['N° Art.', 'Total']]
+        st.dataframe(df_s)
 
 with tabs[2]:
-    acier_df = st.data_editor(pd.DataFrame({'N° Art.': ['2.02'], 'Ø': [12], 'L.totale (ml)': [100.0]}), num_rows="dynamic")
-    ratios = {6: 0.222, 8: 0.395, 10: 0.617, 12: 0.888, 14: 1.21, 16: 1.58, 20: 2.47}
-    if st.button("احسب الحديد"):
-        acier_df['Poids (Kg)'] = acier_df.apply(lambda x: x['L.totale (ml)'] * ratios.get(x['Ø'], 0), axis=1)
-        st.session_state['res_a'] = acier_df[['N° Art.', 'Poids (Kg)']]
-        st.dataframe(acier_df)
+    st.subheader("ميتري الحديد")
+    df_a = st.data_editor(pd.DataFrame({'N° Art.': ['2.01'], 'Ø': [12], 'L.tot': [100.0]}), num_rows="dynamic")
+    ratios = {6:0.222, 8:0.395, 10:0.617, 12:0.888, 14:1.21, 16:1.58, 20:2.47}
+    if st.button("حساب الوزن"):
+        df_a['Total'] = df_a['L.tot'] * df_a.apply(lambda x: ratios.get(x['Ø'], 0), axis=1)
+        st.session_state['res_a'] = df_a[['N° Art.', 'Total']]
+        st.dataframe(df_a)
 
-# --- قسم الربط المطور ---
+# --- أهم مرحلة: دمج الميتري في البوردورو ---
 with tabs[3]:
+    st.subheader("الدمج النهائي (Bordereau + Métré)")
     if uploaded_bp:
         df_bp = pd.read_excel(uploaded_bp)
-        st.write("✅ تم تحميل الملف. دابا اختار السمية ديال الأعمدة:")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_n_col = st.selectbox("اختار العمود اللي فيه رقم الأرتيكل (N°):", df_bp.columns)
-        with col2:
-            selected_q_col = st.selectbox("اختار العمود فين بغيتي تحط الحساب (Quantité):", df_bp.columns)
+        st.info("اختار الأعمدة المناسبة من ملف Excel اللي رفعتيه")
+        c1, c2 = st.columns(2)
+        with c1:
+            col_n = st.selectbox("عمود رقم الأرتيكل (N°):", df_bp.columns)
+        with c2:
+            col_q = st.selectbox("عمود الكمية (Quantité) اللي غايتعمر:", df_bp.columns)
             
-        if st.button("تحديث وتحميل البوردورو"):
-            df_bp[selected_n_col] = df_bp[selected_n_col].astype(str).str.strip()
+        if st.button("بدء عملية الدمج"):
+            # تجهيز البيانات
+            df_bp[col_n] = df_bp[col_n].astype(str).str.strip()
             
-            all_res = []
-            if 'res_s' in st.session_state: all_res.append(st.session_state['res_s'].rename(columns={'N° Art.': selected_n_col, 'Total_V': 'Q'}))
-            if 'res_m' in st.session_state: all_res.append(st.session_state['res_m'].rename(columns={'N° Art.': selected_n_col, 'Total': 'Q'}))
-            if 'res_a' in st.session_state: all_res.append(st.session_state['res_a'].rename(columns={'N° Art.': selected_n_col, 'Poids (Kg)': 'Q'}))
+            # دمج الميتري العادي
+            for _, row in df_metre.iterrows():
+                if row['Total'] > 0:
+                    df_bp.loc[df_bp[col_n] == str(row['N° Art.']), col_q] = row['Total']
             
-            if all_res:
-                final_data = pd.concat(all_res)
-                for _, row in final_data.iterrows():
-                    df_bp.loc[df_bp[selected_n_col] == str(row[selected_n_col]), selected_q_col] = row['Q']
-                
-                st.success("تم التحديث!")
-                st.dataframe(df_bp)
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine='openpyxl') as w:
-                    df_bp.to_excel(w, index=False)
-                st.download_button("📥 تحميل الملف المحدث", buf.getvalue(), "Bordereau_Ordo_Final.xlsx")
+            # دمج السوميلات والحديد
+            if 'res_s' in st.session_state:
+                for _, row in st.session_state['res_s'].iterrows():
+                    df_bp.loc[df_bp[col_n] == str(row['N° Art.']), col_q] = row['Total']
+            
+            if 'res_a' in st.session_state:
+                for _, row in st.session_state['res_a'].iterrows():
+                    df_bp.loc[df_bp[col_n] == str(row['N° Art.']), col_q] = row['Total']
+            
+            st.success("✅ تم إدخال الميتري في البوردورو بنجاح!")
+            st.dataframe(df_bp)
+            
+            # تصدير الملف
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as w:
+                df_bp.to_excel(w, index=False)
+            st.download_button("📥 تحميل البوردورو المكتمل", buf.getvalue(), "Bordereau_Final_Ordo.xlsx")
     else:
-        st.warning("👈 ارفع ملف البوردورو (Excel) أولاً")
+        st.warning("يرجى رفع ملف البوردورو (Excel) من القائمة الجانبية لبدء الدمج.")
